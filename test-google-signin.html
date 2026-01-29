@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Google Sign-In</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #1a1a1a;
+            color: white;
+        }
+        .status {
+            background: #2a2a2a;
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+        }
+        .status div {
+            margin: 10px 0;
+            padding: 10px;
+            background: #3a3a3a;
+            border-radius: 5px;
+        }
+        button {
+            background: linear-gradient(135deg, #a855f7, #7c3aed);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 10px 5px;
+        }
+        button:hover {
+            opacity: 0.9;
+        }
+        .success { color: #4ade80; }
+        .error { color: #ef4444; }
+        .warning { color: #fbbf24; }
+        .log {
+            background: #0a0a0a;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+            max-height: 400px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+        }
+        .log div {
+            margin: 5px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔥 Test Google Sign-In Firebase</h1>
+    
+    <div class="status">
+        <h2>État actuel</h2>
+        <div id="auth-status">⏳ Initialisation...</div>
+        <div id="user-status">👤 Utilisateur: En attente...</div>
+        <div id="credits-status">💎 Crédits: En attente...</div>
+    </div>
+
+    <div>
+        <button id="test-anonymous">1️⃣ Test Connexion Anonyme</button>
+        <button id="test-google">2️⃣ Test Google Sign-In (linkWithPopup)</button>
+        <button id="test-credits">3️⃣ Test Déduction Crédit</button>
+        <button id="clear-logs">🗑️ Effacer logs</button>
+    </div>
+
+    <div class="log" id="logs"></div>
+
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js';
+        import { getAuth, signInAnonymously, onAuthStateChanged, GoogleAuthProvider, linkWithPopup } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js';
+        import { getFirestore, doc, getDoc, setDoc, updateDoc } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
+
+        // Configuration Firebase
+        const firebaseConfig = {
+            apiKey: "AIzaSyCBceabrOm3Hwxcs3N6GKgdJrpZLWnMcNU",
+            authDomain: "iinador.firebaseapp.com",
+            projectId: "iinador",
+            storageBucket: "iinador.firebasestorage.app",
+            messagingSenderId: "937236894682",
+            appId: "1:937236894682:web:968d9a4d18fce03494a6e3",
+            measurementId: "G-PXDFJVS4NL"
+        };
+
+        // Initialisation
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        const googleProvider = new GoogleAuthProvider();
+
+        let currentUser = null;
+        let currentCredits = 0;
+
+        // Fonction de log
+        function addLog(message, type = 'info') {
+            const logsDiv = document.getElementById('logs');
+            const logEntry = document.createElement('div');
+            logEntry.style.color = type === 'error' ? '#ef4444' : type === 'success' ? '#4ade80' : type === 'warning' ? '#fbbf24' : '#d1d5db';
+            logEntry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            logsDiv.appendChild(logEntry);
+            logsDiv.scrollTop = logsDiv.scrollHeight;
+        }
+
+        // Mise à jour du statut
+        function updateStatus() {
+            document.getElementById('auth-status').innerHTML = auth.currentUser 
+                ? '<span class="success">✅ Firebase Auth connecté</span>' 
+                : '<span class="error">❌ Non connecté</span>';
+            
+            document.getElementById('user-status').innerHTML = currentUser
+                ? `👤 ${currentUser.isAnonymous ? '🎭 Anonyme' : '📧 ' + currentUser.email}<br>🔑 UID: ${currentUser.uid}`
+                : '⏳ En attente...';
+            
+            document.getElementById('credits-status').textContent = `💎 Crédits: ${currentCredits}`;
+        }
+
+        // Écouter les changements d'auth
+        onAuthStateChanged(auth, async (user) => {
+            if (user) {
+                currentUser = user;
+                addLog(`✅ Utilisateur connecté: ${user.isAnonymous ? 'Anonyme' : user.email}`, 'success');
+                addLog(`🔑 UID: ${user.uid}`, 'info');
+                updateStatus();
+                await loadCredits();
+            } else {
+                addLog('⚠️ Aucun utilisateur connecté', 'warning');
+                updateStatus();
+            }
+        });
+
+        // Charger les crédits
+        async function loadCredits() {
+            if (!currentUser) return;
+            
+            const userRef = doc(db, "users", currentUser.uid);
+            try {
+                const docSnap = await getDoc(userRef);
+                if (docSnap.exists()) {
+                    currentCredits = docSnap.data().credits || 0;
+                    addLog(`💎 Crédits chargés: ${currentCredits}`, 'success');
+                } else {
+                    await setDoc(userRef, { credits: 10 });
+                    currentCredits = 10;
+                    addLog(`📝 Nouveau document créé avec 10 crédits`, 'success');
+                }
+                updateStatus();
+            } catch (error) {
+                addLog(`❌ Erreur Firestore: ${error.message}`, 'error');
+            }
+        }
+
+        // Test 1: Connexion anonyme
+        document.getElementById('test-anonymous').addEventListener('click', async () => {
+            addLog('🔄 Test connexion anonyme...', 'info');
+            try {
+                const result = await signInAnonymously(auth);
+                addLog('✅ Connexion anonyme réussie!', 'success');
+                addLog(`🔑 UID: ${result.user.uid}`, 'info');
+            } catch (error) {
+                addLog(`❌ Erreur: ${error.message}`, 'error');
+            }
+        });
+
+        // Test 2: Google Sign-In avec linkWithPopup
+        document.getElementById('test-google').addEventListener('click', async () => {
+            if (!currentUser) {
+                addLog('❌ Aucun utilisateur! Faites d\'abord le test 1', 'error');
+                return;
+            }
+
+            if (!currentUser.isAnonymous) {
+                addLog('✅ Déjà connecté avec Google: ' + currentUser.email, 'success');
+                return;
+            }
+
+            addLog('🔗 Tentative de liaison avec Google...', 'info');
+            addLog('🪟 Ouverture de la popup Google...', 'warning');
+
+            try {
+                const result = await linkWithPopup(currentUser, googleProvider);
+                addLog('✅✅✅ Compte lié avec succès!', 'success');
+                addLog(`📧 Email: ${result.user.email}`, 'success');
+                addLog(`🔑 UID conservé: ${result.user.uid}`, 'success');
+            } catch (error) {
+                addLog(`❌ Erreur linkWithPopup: ${error.code}`, 'error');
+                addLog(`❌ Message: ${error.message}`, 'error');
+                
+                if (error.code === 'auth/popup-blocked') {
+                    addLog('⚠️ POPUP BLOQUÉE! Autorisez les popups dans votre navigateur', 'warning');
+                } else if (error.code === 'auth/popup-closed-by-user') {
+                    addLog('⚠️ Popup fermée par l\'utilisateur', 'warning');
+                }
+            }
+        });
+
+        // Test 3: Déduction crédit
+        document.getElementById('test-credits').addEventListener('click', async () => {
+            if (!currentUser) {
+                addLog('❌ Aucun utilisateur connecté', 'error');
+                return;
+            }
+
+            if (currentCredits <= 0) {
+                addLog('❌ Aucun crédit disponible', 'error');
+                return;
+            }
+
+            addLog(`💳 Déduction d'1 crédit (actuellement: ${currentCredits})...`, 'info');
+            
+            try {
+                const newCredits = currentCredits - 1;
+                const userRef = doc(db, "users", currentUser.uid);
+                await updateDoc(userRef, { credits: newCredits });
+                currentCredits = newCredits;
+                addLog(`✅ Crédit déduit! Nouveau total: ${currentCredits}`, 'success');
+                updateStatus();
+            } catch (error) {
+                addLog(`❌ Erreur: ${error.message}`, 'error');
+            }
+        });
+
+        // Effacer les logs
+        document.getElementById('clear-logs').addEventListener('click', () => {
+            document.getElementById('logs').innerHTML = '';
+        });
+
+        addLog('🔥 Page de test chargée', 'success');
+        addLog('📝 Configuration Firebase OK', 'success');
+    </script>
+</body>
+</html>
